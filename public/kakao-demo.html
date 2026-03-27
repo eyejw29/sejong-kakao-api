@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>세종국악 공고알림 — 카카오 연동</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Noto Sans KR',sans-serif;background:#F5F6F8;color:#1A1D24;min-height:100vh;}
+.container{max-width:540px;margin:0 auto;padding:40px 20px;}
+.logo{text-align:center;margin-bottom:32px;}
+.logo h1{font-size:20px;font-weight:700;}
+.logo p{font-size:13px;color:#6B7280;margin-top:4px;}
+.card{background:#fff;border-radius:12px;border:1px solid #E5E7EB;padding:28px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+.card h2{font-size:15px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+.status{display:flex;align-items:center;gap:10px;padding:14px 16px;border-radius:8px;margin-bottom:12px;font-size:13px;}
+.status.connected{background:#ECFDF5;border:1px solid #D1FAE5;color:#065F46;}
+.status.disconnected{background:#FEF2F2;border:1px solid #FEE2E2;color:#991B1B;}
+.status-dot{width:8px;height:8px;border-radius:50%;}
+.status.connected .status-dot{background:#10B981;}
+.status.disconnected .status-dot{background:#EF4444;}
+.btn{display:inline-block;padding:10px 24px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;font-family:inherit;transition:.15s;text-decoration:none;}
+.btn-kakao{background:#FEE500;color:#3C1E1E;width:100%;}
+.btn-kakao:hover{background:#FADA0A;}
+.btn-send{background:#2563EB;color:#fff;width:100%;}
+.btn-send:hover{background:#1D4ED8;}
+.btn-refresh{background:#F3F4F6;color:#374151;width:100%;margin-top:8px;}
+.btn-refresh:hover{background:#E5E7EB;}
+.info{font-size:12px;color:#9CA3AF;margin-top:12px;line-height:1.6;}
+.result{margin-top:12px;padding:12px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;font-size:12px;font-family:monospace;white-space:pre-wrap;display:none;max-height:200px;overflow:auto;}
+.recipients{margin:12px 0;}
+.recipient{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#F9FAFB;border-radius:8px;margin-bottom:6px;font-size:13px;}
+.recipient-name{font-weight:600;}
+.recipient-role{font-size:11px;color:#6B7280;}
+.check{color:#10B981;font-weight:700;}
+.footer{text-align:center;margin-top:24px;font-size:11px;color:#9CA3AF;}
+.footer a{color:#2563EB;text-decoration:none;}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="logo">
+  <h1>세종국악 공고알림 서비스</h1>
+  <p>세종국악관현악단 공고 모니터링 · 카카오톡 알림</p>
+</div>
+<div class="card">
+  <h2>🔗 카카오 연동 상태</h2>
+  <div class="status disconnected" id="conn-status">
+    <div class="status-dot"></div>
+    <span id="conn-text">연동 확인 중...</span>
+  </div>
+  <a href="/api/kakao-login" class="btn btn-kakao" id="login-btn">카카오 로그인으로 연동하기</a>
+  <button class="btn btn-refresh" onclick="checkToken()">연동 상태 새로고침</button>
+  <div class="info">서버에서 안전하게 토큰을 관리합니다.<br>로그인 시 '친구 목록'과 '메시지 발송' 권한을 동의해주세요.</div>
+</div>
+<div class="card">
+  <h2>👥 알림 수신자</h2>
+  <div class="recipients">
+    <div class="recipient">
+      <div><div class="recipient-name">장모님 김혜성</div><div class="recipient-role">세종국악관현악단 대표 · 친구 메시지</div></div>
+      <span class="check">✅</span>
+    </div>
+    <div class="recipient">
+      <div><div class="recipient-name">은재</div><div class="recipient-role">관리자 · 나에게 보내기</div></div>
+      <span class="check">✅</span>
+    </div>
+  </div>
+  <div class="info">매일 오전 9:40 자동 발송. 장모님(친구 메시지) + 은재(나에게 보내기) 동시 발송.</div>
+</div>
+<div class="card">
+  <h2>📤 테스트 메시지 발송</h2>
+  <button class="btn btn-send" onclick="sendTest()">테스트 메시지 보내기</button>
+  <div class="info">현재 진행중인 공고 요약을 카카오톡으로 즉시 발송합니다.</div>
+  <div class="result" id="send-result"></div>
+</div>
+<div class="card">
+  <h2>🔑 토큰 관리</h2>
+  <button class="btn btn-refresh" onclick="refreshToken()">토큰 갱신</button>
+  <div class="info">access_token 만료 시 refresh_token으로 자동 갱신합니다.</div>
+  <div class="result" id="token-result"></div>
+</div>
+<div class="footer">
+  <a href="/">← 공고 대시보드로 돌아가기</a>
+  <br>세종국악 공고알림 서비스 · 서버 토큰 관리
+</div>
+</div>
+<script>
+async function checkToken() {
+  const status = document.getElementById('conn-status');
+  const text = document.getElementById('conn-text');
+  const btn = document.getElementById('login-btn');
+  try {
+    const res = await fetch('/api/kakao-send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'self', message: 'ping' })
+    });
+    if (res.status === 200 || res.status === 403) {
+      status.className = 'status connected';
+      text.textContent = '카카오 연동됨 · 토큰 유효';
+      btn.textContent = '재연동하기';
+    } else if (res.status === 401) {
+      status.className = 'status disconnected';
+      text.textContent = '토큰 만료 · 재로그인 필요';
+    } else {
+      status.className = 'status disconnected';
+      text.textContent = '토큰 미설정 · 로그인 필요';
+    }
+  } catch (e) {
+    status.className = 'status disconnected';
+    text.textContent = '서버 연결 실패';
+  }
+}
+async function sendTest() {
+  const result = document.getElementById('send-result');
+  result.style.display = 'block';
+  result.textContent = '발송 중...';
+  try {
+    const msg = '[세종국악 공고알림] 테스트\n\n이 메시지는 테스트 발송입니다.\n서버에서 정상적으로 카카오톡 메시지를 발송할 수 있는지 확인합니다.\n\n🔗 대시보드: https://eyejw29.github.io/sejong-gugak-dashboard/';
+    const res = await fetch('/api/kakao-send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'both', message: msg })
+    });
+    const data = await res.json();
+    result.textContent = JSON.stringify(data, null, 2);
+  } catch (e) {
+    result.textContent = 'Error: ' + e.message;
+  }
+}
+async function refreshToken() {
+  const result = document.getElementById('token-result');
+  result.style.display = 'block';
+  result.textContent = '갱신 중...';
+  try {
+    const res = await fetch('/api/kakao-token-refresh', { method: 'POST' });
+    const data = await res.json();
+    result.textContent = JSON.stringify(data, null, 2);
+    if (data.success) checkToken();
+  } catch (e) {
+    result.textContent = 'Error: ' + e.message;
+  }
+}
+checkToken();
+</script>
+</body>
+</html>
