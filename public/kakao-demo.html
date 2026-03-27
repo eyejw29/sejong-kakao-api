@@ -12,14 +12,19 @@ body{font-family:'Noto Sans KR',sans-serif;background:#F5F6F8;color:#1A1D24;min-
 .logo{text-align:center;margin-bottom:32px;}
 .logo h1{font-size:20px;font-weight:700;}
 .logo p{font-size:13px;color:#6B7280;margin-top:4px;}
+
 .card{background:#fff;border-radius:12px;border:1px solid #E5E7EB;padding:28px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);}
 .card h2{font-size:15px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+
 .status{display:flex;align-items:center;gap:10px;padding:14px 16px;border-radius:8px;margin-bottom:12px;font-size:13px;}
 .status.connected{background:#ECFDF5;border:1px solid #D1FAE5;color:#065F46;}
 .status.disconnected{background:#FEF2F2;border:1px solid #FEE2E2;color:#991B1B;}
+.status.checking{background:#FFF7ED;border:1px solid #FED7AA;color:#92400E;}
 .status-dot{width:8px;height:8px;border-radius:50%;}
 .status.connected .status-dot{background:#10B981;}
 .status.disconnected .status-dot{background:#EF4444;}
+.status.checking .status-dot{background:#F59E0B;}
+
 .btn{display:inline-block;padding:10px 24px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;font-family:inherit;transition:.15s;text-decoration:none;}
 .btn-kakao{background:#FEE500;color:#3C1E1E;width:100%;}
 .btn-kakao:hover{background:#FADA0A;}
@@ -27,33 +32,47 @@ body{font-family:'Noto Sans KR',sans-serif;background:#F5F6F8;color:#1A1D24;min-
 .btn-send:hover{background:#1D4ED8;}
 .btn-refresh{background:#F3F4F6;color:#374151;width:100%;margin-top:8px;}
 .btn-refresh:hover{background:#E5E7EB;}
+
 .info{font-size:12px;color:#9CA3AF;margin-top:12px;line-height:1.6;}
 .result{margin-top:12px;padding:12px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;font-size:12px;font-family:monospace;white-space:pre-wrap;display:none;max-height:200px;overflow:auto;}
+
 .recipients{margin:12px 0;}
 .recipient{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#F9FAFB;border-radius:8px;margin-bottom:6px;font-size:13px;}
 .recipient-name{font-weight:600;}
 .recipient-role{font-size:11px;color:#6B7280;}
 .check{color:#10B981;font-weight:700;}
+
+.token-info{font-size:12px;color:#6B7280;margin-top:8px;padding:8px 12px;background:#F9FAFB;border-radius:6px;}
+
 .footer{text-align:center;margin-top:24px;font-size:11px;color:#9CA3AF;}
 .footer a{color:#2563EB;text-decoration:none;}
 </style>
 </head>
 <body>
 <div class="container">
+
 <div class="logo">
   <h1>세종국악 공고알림 서비스</h1>
   <p>세종국악관현악단 공고 모니터링 · 카카오톡 알림</p>
 </div>
+
+<!-- 1. 연동 상태 -->
 <div class="card">
   <h2>🔗 카카오 연동 상태</h2>
-  <div class="status disconnected" id="conn-status">
+  <div class="status checking" id="conn-status">
     <div class="status-dot"></div>
     <span id="conn-text">연동 확인 중...</span>
   </div>
+  <div class="token-info" id="token-info" style="display:none;"></div>
   <a href="/api/kakao-login" class="btn btn-kakao" id="login-btn">카카오 로그인으로 연동하기</a>
   <button class="btn btn-refresh" onclick="checkToken()">연동 상태 새로고침</button>
-  <div class="info">서버에서 안전하게 토큰을 관리합니다.<br>로그인 시 '친구 목록'과 '메시지 발송' 권한을 동의해주세요.</div>
+  <div class="info">
+    서버에서 안전하게 토큰을 관리합니다.<br>
+    로그인 시 '친구 목록'과 '메시지 발송' 권한을 동의해주세요.
+  </div>
 </div>
+
+<!-- 2. 수신자 -->
 <div class="card">
   <h2>👥 알림 수신자</h2>
   <div class="recipients">
@@ -68,50 +87,79 @@ body{font-family:'Noto Sans KR',sans-serif;background:#F5F6F8;color:#1A1D24;min-
   </div>
   <div class="info">매일 오전 9:40 자동 발송. 장모님(친구 메시지) + 은재(나에게 보내기) 동시 발송.</div>
 </div>
+
+<!-- 3. 테스트 발송 -->
 <div class="card">
   <h2>📤 테스트 메시지 발송</h2>
   <button class="btn btn-send" onclick="sendTest()">테스트 메시지 보내기</button>
   <div class="info">현재 진행중인 공고 요약을 카카오톡으로 즉시 발송합니다.</div>
   <div class="result" id="send-result"></div>
 </div>
+
+<!-- 4. 토큰 관리 -->
 <div class="card">
   <h2>🔑 토큰 관리</h2>
   <button class="btn btn-refresh" onclick="refreshToken()">토큰 갱신</button>
-  <div class="info">access_token 만료 시 refresh_token으로 자동 갱신합니다.</div>
+  <div class="info">access_token 만료 시 refresh_token으로 자동 갱신합니다.<br>갱신 후 환경변수 자동 업데이트 + 재배포됩니다.</div>
   <div class="result" id="token-result"></div>
 </div>
+
 <div class="footer">
   <a href="/">← 공고 대시보드로 돌아가기</a>
   <br>세종국악 공고알림 서비스 · 서버 토큰 관리
 </div>
+
 </div>
+
 <script>
+// URL에 ?connected=true가 있으면 로그인 직후임
+const urlParams = new URLSearchParams(window.location.search);
+const justConnected = urlParams.get('connected') === 'true';
+
 async function checkToken() {
   const status = document.getElementById('conn-status');
   const text = document.getElementById('conn-text');
   const btn = document.getElementById('login-btn');
+  const tokenInfo = document.getElementById('token-info');
+
+  // 로그인 직후 리다이렉트면 즉시 연동됨 표시
+  if (justConnected) {
+    status.className = 'status connected';
+    text.textContent = '카카오 연동 완료 · 토큰 저장됨';
+    btn.textContent = '재연동하기';
+    tokenInfo.style.display = 'block';
+    tokenInfo.textContent = '방금 로그인 완료. 재배포 진행 중 (1~2분 후 완전 적용)';
+    window.history.replaceState({}, '', '/kakao-demo.html');
+    return;
+  }
+
+  status.className = 'status checking';
+  text.textContent = '연동 확인 중...';
+
   try {
-    const res = await fetch('/api/kakao-send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'self', message: 'ping' })
-    });
-    if (res.status === 200 || res.status === 403) {
+    const res = await fetch('/api/kakao-status');
+    const data = await res.json();
+
+    if (data.connected) {
       status.className = 'status connected';
-      text.textContent = '카카오 연동됨 · 토큰 유효';
+      text.textContent = data.message || '카카오 연동됨 · 토큰 유효';
       btn.textContent = '재연동하기';
-    } else if (res.status === 401) {
-      status.className = 'status disconnected';
-      text.textContent = '토큰 만료 · 재로그인 필요';
+      tokenInfo.style.display = 'block';
+      const expMin = data.expires_in_seconds ? Math.round(data.expires_in_seconds / 60) : '?';
+      tokenInfo.textContent = '토큰 만료까지: ' + expMin + '분 · 저장: ' + (data.token_saved_at || '-');
     } else {
       status.className = 'status disconnected';
-      text.textContent = '토큰 미설정 · 로그인 필요';
+      text.textContent = data.message || '토큰 만료 · 재로그인 필요';
+      btn.textContent = '카카오 로그인으로 연동하기';
+      tokenInfo.style.display = 'none';
     }
   } catch (e) {
     status.className = 'status disconnected';
     text.textContent = '서버 연결 실패';
+    tokenInfo.style.display = 'none';
   }
 }
+
 async function sendTest() {
   const result = document.getElementById('send-result');
   result.style.display = 'block';
@@ -129,6 +177,7 @@ async function sendTest() {
     result.textContent = 'Error: ' + e.message;
   }
 }
+
 async function refreshToken() {
   const result = document.getElementById('token-result');
   result.style.display = 'block';
@@ -137,11 +186,15 @@ async function refreshToken() {
     const res = await fetch('/api/kakao-token-refresh', { method: 'POST' });
     const data = await res.json();
     result.textContent = JSON.stringify(data, null, 2);
-    if (data.success) checkToken();
+    if (data.success) {
+      setTimeout(() => checkToken(), 2000);
+    }
   } catch (e) {
     result.textContent = 'Error: ' + e.message;
   }
 }
+
+// 페이지 로드 시 상태 확인
 checkToken();
 </script>
 </body>
