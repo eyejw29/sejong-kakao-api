@@ -4,6 +4,8 @@ on:
   schedule:
     # 매일 오전 9:40 KST (UTC 00:40)
     - cron: '40 0 * * *'
+    # 보험용 예비: 오후 1:00 KST (UTC 04:00)
+    - cron: '0 4 * * *'
   workflow_dispatch: # 수동 실행 버튼
  
 jobs:
@@ -11,9 +13,42 @@ jobs:
     runs-on: ubuntu-latest
  
     steps:
+      - name: 오전 발송 여부 확인 (13시 예비용)
+        id: check_duplicate
+        run: |
+          TRIGGER="${{ github.event.schedule }}"
+          echo "trigger=$TRIGGER" >> $GITHUB_OUTPUT
+ 
+          # 13:00 예비 스케줄일 때만 중복 체크
+          if [ "$TRIGGER" = "0 4 * * *" ]; then
+            echo "13시 예비 스케줄 실행 — 오전 발송 여부 확인 중..."
+ 
+            # 오늘 이 워크플로우가 이미 성공한 적 있는지 확인
+            TODAY=$(date -u +%Y-%m-%dT00:00:00Z)
+            RUNS=$(curl -sf \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/daily-kakao-alert.yml/runs?status=success&created=>=$TODAY&per_page=5")
+ 
+            SUCCESS_COUNT=$(echo "$RUNS" | jq '[.workflow_runs[] | select(.run_started_at >= "'$TODAY'")] | length')
+ 
+            if [ "$SUCCESS_COUNT" -gt "0" ]; then
+              echo "skip=true" >> $GITHUB_OUTPUT
+              echo "오전에 이미 발송 성공. 예비 발송 스킵."
+            else
+              echo "skip=false" >> $GITHUB_OUTPUT
+              echo "오전 발송 실패 감지! 예비 발송 진행."
+            fi
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "오전 9:40 정규 스케줄 실행"
+          fi
+ 
       - name: 공고 데이터 확인 및 메시지 생성
+        if: steps.check_duplicate.outputs.skip != 'true'
         id: prepare
         run: |
+          TRIGGER="${{ steps.check_duplicate.outputs.trigger }}"
+ 
           # 대시보드 데이터에서 진행중 공고 확인
           DATA_URL="https://raw.githubusercontent.com/eyejw29/sejong-gugak-dashboard/main/data/gongo_list.json"
           DATA=$(curl -sf "$DATA_URL" || echo "[]")
@@ -35,6 +70,13 @@ jobs:
             echo "skip=false" >> $GITHUB_OUTPUT
             echo "count=$COUNT" >> $GITHUB_OUTPUT
  
+            # 13시 예비 발송이면 메시지에 표시
+            if [ "$TRIGGER" = "0 4 * * *" ]; then
+              HEADER="[세종국악 공고알림] 오늘의 공고 현황 (예비발송)"
+            else
+              HEADER="[세종국악 공고알림] 오늘의 공고 현황"
+            fi
+ 
             # 메시지 생성
             MSG=$(echo "$DATA" | python3 -c "
           import json, sys
@@ -43,7 +85,8 @@ jobs:
           today = datetime.now().strftime('%Y-%m-%d')
           active = [g for g in data if g.get('end_date','') >= today or g.get('status','') == '진행중']
  
-          lines = ['[세종국악 공고알림] 오늘의 공고 현황', '', f'진행중 공고: {len(active)}건', '']
+          header = '$HEADER'
+          lines = [header, '', f'진행중 공고: {len(active)}건', '']
           for g in active[:5]:
               title = g.get('title', '제목없음')[:30]
               end = g.get('end_date', '미정')
@@ -62,7 +105,7 @@ jobs:
           fi
  
       - name: 카카오톡 메시지 발송
-        if: steps.prepare.outputs.skip != 'true'
+        if: steps.check_duplicate.outputs.skip != 'true' && steps.prepare.outputs.skip != 'true'
         run: |
           RESPONSE=$(curl -sf -X POST \
             "https://sejong-kakao-api.vercel.app/api/kakao-send" \
@@ -86,6 +129,11 @@ jobs:
           fi
  
       - name: 발송 스킵 알림
-        if: steps.prepare.outputs.skip == 'true'
-        run: echo "진행중인 공고가 없어 카카오톡 발송을 건너뛰었습니다."
+        if: steps.check_duplicate.outputs.skip == 'true' || steps.prepare.outputs.skip == 'true'
+        run: |
+          if [ "${{ steps.check_duplicate.outputs.skip }}" = "true" ]; then
+            echo "오전에 이미 발송 완료. 예비 발송 불필요."
+          else
+            echo "진행중인 공고가 없어 카카오톡 발송을 건너뛰었습니다."
+          fi
  
