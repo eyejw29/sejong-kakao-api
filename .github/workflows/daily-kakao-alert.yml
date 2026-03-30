@@ -1,0 +1,91 @@
+name: 매일 카카오톡 공고 알림 발송
+ 
+on:
+  schedule:
+    # 매일 오전 9:40 KST (UTC 00:40)
+    - cron: '40 0 * * *'
+  workflow_dispatch: # 수동 실행 버튼
+ 
+jobs:
+  send-alert:
+    runs-on: ubuntu-latest
+ 
+    steps:
+      - name: 공고 데이터 확인 및 메시지 생성
+        id: prepare
+        run: |
+          # 대시보드 데이터에서 진행중 공고 확인
+          DATA_URL="https://raw.githubusercontent.com/eyejw29/sejong-gugak-dashboard/main/data/gongo_list.json"
+          DATA=$(curl -sf "$DATA_URL" || echo "[]")
+ 
+          # 진행중 공고 개수
+          COUNT=$(echo "$DATA" | python3 -c "
+          import json, sys
+          from datetime import datetime
+          data = json.load(sys.stdin)
+          today = datetime.now().strftime('%Y-%m-%d')
+          active = [g for g in data if g.get('end_date','') >= today or g.get('status','') == '진행중']
+          print(len(active))
+          " 2>/dev/null || echo "0")
+ 
+          if [ "$COUNT" = "0" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "현재 진행중인 공고가 없어 발송 스킵"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "count=$COUNT" >> $GITHUB_OUTPUT
+ 
+            # 메시지 생성
+            MSG=$(echo "$DATA" | python3 -c "
+          import json, sys
+          from datetime import datetime
+          data = json.load(sys.stdin)
+          today = datetime.now().strftime('%Y-%m-%d')
+          active = [g for g in data if g.get('end_date','') >= today or g.get('status','') == '진행중']
+ 
+          lines = ['[세종국악 공고알림] 오늘의 공고 현황', '', f'진행중 공고: {len(active)}건', '']
+          for g in active[:5]:
+              title = g.get('title', '제목없음')[:30]
+              end = g.get('end_date', '미정')
+              lines.append(f'- {title} (마감: {end})')
+          if len(active) > 5:
+              lines.append(f'  외 {len(active)-5}건 더')
+          lines.append('')
+          lines.append('대시보드: https://eyejw29.github.io/sejong-gugak-dashboard/')
+          print('\n'.join(lines))
+          " 2>/dev/null || echo "[세종국악 공고알림] 오늘의 공고 현황을 확인하세요.\n\n대시보드: https://eyejw29.github.io/sejong-gugak-dashboard/")
+ 
+            # 메시지를 환경변수로 저장 (멀티라인)
+            echo "message<<MSGEOF" >> $GITHUB_OUTPUT
+            echo "$MSG" >> $GITHUB_OUTPUT
+            echo "MSGEOF" >> $GITHUB_OUTPUT
+          fi
+ 
+      - name: 카카오톡 메시지 발송
+        if: steps.prepare.outputs.skip != 'true'
+        run: |
+          RESPONSE=$(curl -sf -X POST \
+            "https://sejong-kakao-api.vercel.app/api/kakao-send" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg msg "${{ steps.prepare.outputs.message }}" '{type: "both", message: $msg}')")
+ 
+          echo "발송 결과: $RESPONSE"
+ 
+          # 성공 여부 확인
+          SUCCESS=$(echo "$RESPONSE" | jq -r '.success // false')
+          REFRESHED=$(echo "$RESPONSE" | jq -r '.token_refreshed // false')
+ 
+          if [ "$SUCCESS" = "true" ]; then
+            echo "발송 성공!"
+            if [ "$REFRESHED" = "true" ]; then
+              echo "토큰이 자동 갱신되었습니다."
+            fi
+          else
+            echo "발송 실패: $RESPONSE"
+            exit 1
+          fi
+ 
+      - name: 발송 스킵 알림
+        if: steps.prepare.outputs.skip == 'true'
+        run: echo "진행중인 공고가 없어 카카오톡 발송을 건너뛰었습니다."
+ 
